@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Task Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .kanban-column {
+            min-height: 200px;
+        }
+        .task-card {
+            cursor: grab;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .task-card:active {
+            cursor: grabbing;
+        }
+        .dragging {
+            opacity: 0.5;
+            transform: rotate(3deg);
+        }
+        .drag-over {
+            background-color: rgba(0, 0, 0, 0.1);
+            border: 2px dashed #ccc;
+        }
+        #animation-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+        #appTitleDisplay {
+            transition: background-color 0.2s;
+        }
+        .clapping-hand {
+            position: fixed;
+            font-size: 3rem;
+            animation: float-up 2s ease-out forwards;
+            pointer-events: none;
+            z-index: 101;
+            text-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+        @keyframes float-up {
+            0% { transform: translateY(0) scale(0.5); opacity: 1; }
+            50% { transform: scale(1.2); }
+            100% { transform: translateY(-200px) scale(1); opacity: 0; }
+        }
+        .subtask {
+            transition: color 0.3s;
+        }
+        .subtask.completed {
+            text-decoration: line-through;
+            color: #9ca3af; /* gray-400 */
+        }
+        .avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background-color: #d1d5db; /* gray-300 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #374151; /* gray-700 */
+            border: 2px solid white;
+        }
+        #toast-notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            background-color: #2d3748; /* gray-800 */
+            color: white;
+            font-size: 14px;
+            z-index: 110;
+            opacity: 0;
+            transition: opacity 0.5s, transform 0.5s;
+        }
+        #toast-notification.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-10px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+
+    <canvas id="animation-canvas"></canvas>
+    <div id="toast-notification"></div>
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-4">
+            <div class="absolute top-4 right-4">
+                <div class="relative">
+                    <button id="optionsBtn" class="p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-blue-500">
+                        <svg class="w-6 h-6 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                    <div id="optionsMenu" class="hidden absolute right-0 mt-2 w-56 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 z-20">
+                        <div class="p-4 space-y-4">
+                            <div>
+                                <label for="animationSelector" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-translate-key="animationLabel">Animation</label>
+                                <select id="animationSelector" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="confetti" data-translate-key="animationConfetti">Confetti</option>
+                                    <option value="fireworks" data-translate-key="animationFireworks">Fireworks</option>
+                                    <option value="clapping" data-translate-key="animationClapping">Clapping</option>
+                                    <option value="none" data-translate-key="animationNone">None</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="languageSelector" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-translate-key="languageLabel">Language</label>
+                                <select id="languageSelector" class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="en">English</option>
+                                    <option value="es">Español</option>
+                                    <option value="fr">Français</option>
+                                    <option value="zh">简体中文</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="title-container" class="relative max-w-2xl mx-auto">
+                 <h1 id="appTitleDisplay" data-translate-key="appTitle" class="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg px-2 py-1">Kanban Task Tracker</h1>
+                 <input type="text" id="appTitleInput" class="hidden text-center text-4xl md:text-5xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none w-full text-gray-800 dark:text-white">
+            </div>
+            <p data-translate-key="appSubtitle" class="text-gray-500 dark:text-gray-400 mt-2">Organize your workflow, one task at a time.</p>
+        </header>
+
+        <div class="mb-8 text-center">
+            <p class="text-sm text-gray-500" data-translate-key="yourIdLabel">Your User ID (Share with collaborators): <strong id="userIdDisplay" class="select-all">...</strong></p>
+        </div>
+
+        <div class="flex justify-center mb-8">
+            <button id="addTaskBtn" data-translate-key="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-105 transition-transform">
+                Add New Task
+            </button>
+        </div>
+
+        <div id="kanban-board" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div id="todo" class="kanban-column-container bg-gray-200 dark:bg-gray-800 rounded-lg p-4"><h2 data-translate-key="todoHeader" class="text-2xl font-bold mb-4 text-center text-gray-700 dark:text-gray-200">To Do</h2><div id="todo-column" class="kanban-column space-y-4 rounded-lg p-2"></div></div>
+            <div id="inprogress" class="kanban-column-container bg-gray-200 dark:bg-gray-800 rounded-lg p-4"><h2 data-translate-key="inProgressHeader" class="text-2xl font-bold mb-4 text-center text-gray-700 dark:text-gray-200">In Progress</h2><div id="inprogress-column" class="kanban-column space-y-4 rounded-lg p-2"></div></div>
+            <div id="done" class="kanban-column-container bg-gray-200 dark:bg-gray-800 rounded-lg p-4"><h2 data-translate-key="doneHeader" class="text-2xl font-bold mb-4 text-center text-gray-700 dark:text-gray-200">Done</h2><div id="done-column" class="kanban-column space-y-4 rounded-lg p-2"></div></div>
+        </div>
+    </div>
+    
+    <!-- User Profile Modal -->
+    <div id="profileModal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-sm mx-4">
+            <h2 data-translate-key="profileModalTitle" class="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Welcome! Set up your profile.</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="userNameInput" data-translate-key="nameLabel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                    <input type="text" id="userNameInput" class="w-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg" placeholder="e.g., Jane Doe">
+                </div>
+                <div>
+                    <label for="userEmailInput" data-translate-key="emailLabel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                    <input type="email" id="userEmailInput" class="w-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg" placeholder="e.g., jane.doe@example.com">
+                </div>
+            </div>
+            <div class="flex justify-end mt-6">
+                <button id="saveProfileBtn" data-translate-key="saveProfileBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save Profile</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Add/Edit Task Modal -->
+    <div id="taskModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 overflow-y-auto py-10">
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-lg mx-4">
+            <h2 id="modalTitle" data-translate-key="modalTitle" class="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Add a New Task</h2>
+            <div class="space-y-4">
+                <input type="text" id="taskInput" data-translate-key-placeholder="taskInputPlaceholder" class="w-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg" placeholder="Enter task description...">
+                <div>
+                    <label for="taskDueDate" data-translate-key="dueDateLabel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date</label>
+                    <input type="date" id="taskDueDate" class="w-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg">
+                </div>
+                <div>
+                    <label for="taskAssignee" data-translate-key="assigneeLabel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assign Primary Task To</label>
+                    <select id="taskAssignee" class="w-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg"></select>
+                </div>
+                <div>
+                    <label data-translate-key="subtasksLabel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subtasks</label>
+                    <div id="subtasksContainer" class="space-y-3"></div>
+                    <button id="addSubtaskBtn" class="mt-2 text-sm text-blue-600 hover:text-blue-800" data-translate-key="addSubtaskBtn">+ Add Subtask</button>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-4 mt-6">
+                <button id="cancelTaskBtn" data-translate-key="cancelBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="saveTaskBtn" data-translate-key="saveBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save Task</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, addDoc, onSnapshot, updateDoc, deleteDoc, query, setDoc, getDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : {
+                apiKey: "AIzaSyCwV9ztLYbuIEskkc6xL0cPS0M1jjBPi40",
+                authDomain: "task-tracker-dee75.firebaseapp.com",
+                projectId: "task-tracker-dee75",
+                storageBucket: "task-tracker-dee75.appspot.com",
+                messagingSenderId: "733291276650",
+                appId: "1:733291276650:web:1884afcba4e95fe6c81d13",
+                measurementId: "G-YWLG9PQT2W"
+              };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'collaborative-task-tracker';
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let userId = null;
+        let tasksCollectionRef, usersCollectionRef;
+        let unsubscribeTasks, unsubscribeSettings, unsubscribeUsers;
+        let currentTasks = [], collaborators = [];
+        let currentLang = 'en', currentAnimation = 'confetti';
+
+        const optionsBtn = document.getElementById('optionsBtn'), optionsMenu = document.getElementById('optionsMenu');
+        const languageSelector = document.getElementById('languageSelector'), animationSelector = document.getElementById('animationSelector');
+        const appTitleDisplay = document.getElementById('appTitleDisplay'), appTitleInput = document.getElementById('appTitleInput');
+        const addTaskBtn = document.getElementById('addTaskBtn'), taskModal = document.getElementById('taskModal');
+        const cancelTaskBtn = document.getElementById('cancelTaskBtn'), saveTaskBtn = document.getElementById('saveTaskBtn');
+        const taskInput = document.getElementById('taskInput'), taskDueDate = document.getElementById('taskDueDate');
+        const taskAssignee = document.getElementById('taskAssignee'), subtasksContainer = document.getElementById('subtasksContainer');
+        const addSubtaskBtn = document.getElementById('addSubtaskBtn');
+        const columns = document.querySelectorAll('.kanban-column');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const profileModal = document.getElementById('profileModal'), userNameInput = document.getElementById('userNameInput');
+        const userEmailInput = document.getElementById('userEmailInput'), saveProfileBtn = document.getElementById('saveProfileBtn');
+        const toast = document.getElementById('toast-notification');
+
+        const translations = {
+            en: { appTitle: 'Kanban Task Tracker', appSubtitle: 'Organize your workflow, one task at a time.', addTaskBtn: 'Add New Task', todoHeader: 'To Do', inProgressHeader: 'In Progress', doneHeader: 'Done', modalTitle: 'Add a New Task', editModalTitle: 'Edit Task', taskInputPlaceholder: 'Enter task description...', dueDateLabel: 'Due Date', cancelBtn: 'Cancel', saveBtn: 'Save Task', dueOverdue: 'Overdue', dueToday: 'Due Today', dueTomorrow: 'Due Tomorrow', duePrefix: 'Due:', animationLabel: 'Animation', animationConfetti: 'Confetti', animationFireworks: 'Fireworks', animationClapping: 'Clapping', animationNone: 'None', languageLabel: 'Language', assigneeLabel: 'Assign Primary Task To', subtasksLabel: 'Subtasks', addSubtaskBtn: '+ Add Subtask', unassigned: 'Unassigned', profileModalTitle: 'Welcome! Set up your profile.', nameLabel: 'Name', emailLabel: 'Email', saveProfileBtn: 'Save Profile', yourIdLabel: 'Your User ID (Share with collaborators):', emailSent: 'Email notification sent to', subtaskProgressFormat: '{completed} of {total} subtasks' },
+            es: { appTitle: 'Tablero de Tareas Kanban', appSubtitle: 'Organiza tu flujo de trabajo, una tarea a la vez.', addTaskBtn: 'Añadir Nueva Tarea', todoHeader: 'Por Hacer', inProgressHeader: 'En Progreso', doneHeader: 'Hecho', modalTitle: 'Añadir Nueva Tarea', editModalTitle: 'Editar Tarea', taskInputPlaceholder: 'Escriba la descripción de la tarea...', dueDateLabel: 'Fecha de Vencimiento', cancelBtn: 'Cancelar', saveBtn: 'Guardar Tarea', dueOverdue: 'Vencido', dueToday: 'Vence Hoy', dueTomorrow: 'Vence Mañana', duePrefix: 'Vence:', animationLabel: 'Animación', animationConfetti: 'Confeti', animationFireworks: 'Fuegos Artificiales', animationClapping: 'Aplausos', animationNone: 'Ninguna', languageLabel: 'Idioma', assigneeLabel: 'Asignar Tarea Principal A', subtasksLabel: 'Subtareas', addSubtaskBtn: '+ Añadir Subtarea', unassigned: 'Sin Asignar', profileModalTitle: '¡Bienvenido! Configure su perfil.', nameLabel: 'Nombre', emailLabel: 'Correo Electrónico', saveProfileBtn: 'Guardar Perfil', yourIdLabel: 'Su ID de Usuario (Compartir con colaboradores):', emailSent: 'Notificación por correo electrónico enviada a', subtaskProgressFormat: '{completed} de {total} subtareas' },
+            fr: { appTitle: 'Suivi des Tâches Kanban', appSubtitle: 'Organisez votre flux de travail, une tâche à la fois.', addTaskBtn: 'Ajouter une Tâche', todoHeader: 'À Faire', inProgressHeader: 'En Cours', doneHeader: 'Terminé', modalTitle: 'Ajouter une nouvelle tâche', editModalTitle: 'Modifier la Tâche', taskInputPlaceholder: 'Entrez la description de la tâche...', dueDateLabel: 'Date d\'échéance', cancelBtn: 'Annuler', saveBtn: 'Enregistrer', dueOverdue: 'En retard', dueToday: 'Pour Aujourd\'hui', dueTomorrow: 'Pour Demain', duePrefix: 'Échéance:', animationLabel: 'Animation', animationConfetti: 'Confettis', animationFireworks: 'Feux d\'artifice', animationClapping: 'Applaudissements', animationNone: 'Aucune', languageLabel: 'Langue', assigneeLabel: 'Assigner la tâche principale à', subtasksLabel: 'Sous-tâches', addSubtaskBtn: '+ Ajouter une sous-tâche', unassigned: 'Non Assigné', profileModalTitle: 'Bienvenue! Configurez votre profil.', nameLabel: 'Nom', emailLabel: 'E-mail', saveProfileBtn: 'Enregistrer le Profil', yourIdLabel: 'Votre ID utilisateur (Partager avec les collaborateurs):', emailSent: 'Notification par e-mail envoyée à', subtaskProgressFormat: '{completed} sur {total} sous-tâches' },
+            zh: { appTitle: '看板任务追踪器', appSubtitle: '一次一项任务，组织您的工作流程。', addTaskBtn: '添加新任务', todoHeader: '待办', inProgressHeader: '进行中', doneHeader: '已完成', modalTitle: '添加一个新任务', editModalTitle: '编辑任务', taskInputPlaceholder: '输入任务描述...', dueDateLabel: '截止日期', cancelBtn: '取消', saveBtn: '保存任务', dueOverdue: '已逾期', dueToday: '今天到期', dueTomorrow: '明天到期', duePrefix: '到期:', animationLabel: '动画', animationConfetti: '五彩纸屑', animationFireworks: '烟花', animationClapping: '鼓掌', animationNone: '无', languageLabel: '语言', assigneeLabel: '分配主任务给', subtasksLabel: '子任务', addSubtaskBtn: '+ 添加子任务', unassigned: '未分配', profileModalTitle: '欢迎！请设置您的个人资料。', nameLabel: '名称', emailLabel: '电子邮件', saveProfileBtn: '保存个人资料', yourIdLabel: '您的用户ID（与协作者共享）：', emailSent: '邮件通知已发送至', subtaskProgressFormat: '完成 {completed} / {total} 个子任务' }
+        };
+
+        onAuthStateChanged(auth, async user => {
+            if (user) { 
+                userId = user.uid; 
+                userIdDisplay.textContent = userId;
+                initializeAppData();
+                const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
+                const userDoc = await getDoc(userDocRef);
+                if (!userDoc.exists() || !userDoc.data().name || !userDoc.data().email) {
+                    profileModal.classList.remove('hidden');
+                } else {
+                     await setDoc(userDocRef, { lastSeen: new Date() }, { merge: true });
+                }
+            } 
+            else {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) { console.error("Authentication Error:", error); }
+            }
+        });
+
+        function initializeAppData() {
+            if (!userId) return;
+            const settingsPath = `artifacts/${appId}/public/data/settings`;
+            tasksCollectionRef = collection(db, `artifacts/${appId}/public/data/tasks`);
+            usersCollectionRef = collection(db, `artifacts/${appId}/public/data/users`);
+
+            if (unsubscribeTasks) unsubscribeTasks();
+            unsubscribeTasks = onSnapshot(query(tasksCollectionRef), s => {
+                currentTasks = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderTasks(currentTasks);
+            });
+
+            if(unsubscribeUsers) unsubscribeUsers();
+            unsubscribeUsers = onSnapshot(query(usersCollectionRef), s => {
+                collaborators = s.docs.map(d => d.data());
+                updateAssigneeDropdown();
+            });
+            
+            if (unsubscribeSettings) unsubscribeSettings();
+            unsubscribeSettings = onSnapshot(doc(db, settingsPath, 'appSettings'), s => {
+                const settings = s.exists() ? s.data() : {};
+                updateText('appTitle', settings.title || null);
+                setAnimation(settings.animation || 'confetti', false);
+                setLanguage(settings.language || 'en', false);
+            });
+        }
+        
+        async function saveSetting(key, value) {
+            await setDoc(doc(db, `artifacts/${appId}/public/data/settings/appSettings`), { [key]: value }, { merge: true });
+        }
+        function setLanguage(lang, save = true) {
+            currentLang = translations[lang] ? lang : 'en';
+            languageSelector.value = currentLang;
+            document.querySelectorAll('[data-translate-key]').forEach(el => updateText(el.getAttribute('data-translate-key')));
+            document.querySelectorAll('[data-translate-key-placeholder]').forEach(el => {
+                el.placeholder = translations[currentLang][el.getAttribute('data-translate-key-placeholder')] || el.placeholder;
+            });
+            renderTasks(currentTasks);
+            if (save) saveSetting('language', currentLang);
+        }
+        function setAnimation(animation, save = true) {
+            currentAnimation = animation;
+            animationSelector.value = animation;
+            if (save) saveSetting('animation', currentAnimation);
+        }
+        function updateText(key, overrideText) {
+            document.querySelectorAll(`[data-translate-key="${key}"]`).forEach(el => {
+                const newText = overrideText ?? (translations[currentLang]?.[key] || '...');
+                el.textContent = newText;
+                if (key === 'appTitle') document.title = newText;
+            });
+        }
+        
+        languageSelector.addEventListener('change', e => setLanguage(e.target.value));
+        animationSelector.addEventListener('change', e => setAnimation(e.target.value));
+        
+        function renderTasks(tasks) {
+            columns.forEach(c => c.innerHTML = '');
+            tasks.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+            tasks.forEach(t => document.getElementById(`${t.status}-column`)?.appendChild(createTaskCard(t)));
+        }
+        function getDueDateStatus(dueDateString) {
+            if (!dueDateString) return { text: '', color: '' };
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const [y, m, d] = dueDateString.split('-').map(Number);
+            const dueDate = new Date(y, m - 1, d);
+            const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+            const T = translations[currentLang];
+            const formattedDate = dueDate.toLocaleDateString(currentLang, { month: 'short', day: 'numeric' });
+            if (diffDays < 0) return { text: `${T.dueOverdue} (${formattedDate})`, color: 'text-red-500' };
+            if (diffDays === 0) return { text: T.dueToday, color: 'text-orange-500 font-bold' };
+            if (diffDays === 1) return { text: T.dueTomorrow, color: 'text-yellow-500' };
+            return { text: `${T.duePrefix} ${formattedDate}`, color: 'text-gray-400' };
+        }
+        function createAvatar(assigneeId) {
+            const assignee = collaborators.find(c => c.uid === assigneeId);
+            const name = assignee?.name || assigneeId.substring(0,2);
+            const email = assignee?.email || 'N/A';
+            const initial = name.substring(0, 2).toUpperCase();
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = initial;
+            avatar.title = `${name} (${email})`;
+            return avatar;
+        }
+        function createTaskCard(task) {
+            const card = document.createElement('div');
+            card.id = task.id;
+            card.className = 'task-card bg-white dark:bg-gray-700 p-4 rounded-lg shadow-md';
+            card.draggable = true;
+            let subtasksHtml = '';
+            const totalSubtasks = task.subtasks?.length || 0;
+            const completedSubtasks = (task.subtasks || []).filter(sub => sub.completed).length;
+            const mySubtasks = (task.subtasks || []).filter(sub => sub.assignedTo === userId);
+
+            if (totalSubtasks > 0) {
+                 const progressText = translations[currentLang].subtaskProgressFormat
+                    .replace('{completed}', completedSubtasks)
+                    .replace('{total}', totalSubtasks);
+                subtasksHtml = `<div class="mt-3 space-y-2"><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">${progressText}</p>`;
+                mySubtasks.forEach((sub) => {
+                    const originalIndex = task.subtasks.findIndex(originalSub => originalSub.text === sub.text && originalSub.assignedTo === sub.assignedTo && originalSub.completed === sub.completed);
+                    if (originalIndex !== -1) {
+                         subtasksHtml += `<div class="flex items-center"><input type="checkbox" data-task-id="${task.id}" data-subtask-index="${originalIndex}" class="subtask-checkbox h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" ${sub.completed ? 'checked' : ''}><label class="ml-2 text-sm subtask ${sub.completed ? 'completed' : ''}">${sub.text}</label></div>`;
+                    }
+                });
+                subtasksHtml += '</div>';
+            }
+
+            const assigneeHtml = task.assignedTo ? `<div class="assignee-avatar-wrapper"></div>` : '';
+            card.innerHTML = `<div class="flex justify-between items-start"><p class="flex-grow text-gray-800 dark:text-gray-200">${task.text}</p><button title="Edit Task" class="edit-btn text-gray-400 hover:text-blue-500 ml-4 p-1 font-bold transition-colors flex-shrink-0">&#9998;</button><button title="Delete Task" class="delete-btn text-gray-400 hover:text-red-500 p-1 font-bold transition-colors flex-shrink-0">&#x2715;</button></div>${task.dueDate ? `<small class="mt-2 block text-xs ${getDueDateStatus(task.dueDate).color}">${getDueDateStatus(task.dueDate).text}</small>` : ''}${subtasksHtml}<div class="flex justify-end mt-2">${assigneeHtml}</div>`;
+            if (task.assignedTo) card.querySelector('.assignee-avatar-wrapper').appendChild(createAvatar(task.assignedTo));
+            card.querySelector('.delete-btn').onclick = e => { e.stopPropagation(); deleteTask(task.id); };
+            card.querySelector('.edit-btn').onclick = e => { e.stopPropagation(); openTaskModal(task); };
+            card.querySelectorAll('.subtask-checkbox').forEach(cb => { cb.onclick = e => { e.stopPropagation(); toggleSubtask(e.target.dataset.taskId, e.target.dataset.subtaskIndex); }; });
+            card.addEventListener('dragstart', handleDragStart);
+            return card;
+        }
+        async function toggleSubtask(taskId, subtaskIndex) {
+            const task = currentTasks.find(t => t.id === taskId); if (!task) return;
+            const newSubtasks = [...task.subtasks];
+            newSubtasks[subtaskIndex].completed = !newSubtasks[subtaskIndex].completed;
+            await updateDoc(doc(tasksCollectionRef, taskId), { subtasks: newSubtasks });
+        }
+        
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function sendAssignmentEmail(taskText, assignee) {
+             console.log(`%c[EMAIL SIMULATION]
+            To: ${assignee.email} (${assignee.name})
+            Subject: You have been assigned a task: "${taskText}"
+            Body: Hi ${assignee.name},\n\nThe task "${taskText}" has been assigned to you.
+            --- This is a simulation. In a real app, this would be sent from a secure server. ---`, "color: blue; font-style: italic;");
+            showToast(`${translations[currentLang].emailSent} ${assignee.name}`);
+        }
+
+        async function saveTask(originalTask = null) {
+            const taskId = originalTask ? originalTask.id : null;
+            
+            const newSubtasks = Array.from(subtasksContainer.querySelectorAll('.subtask-item')).map((item, index) => {
+                const originalSubtask = originalTask?.subtasks?.[index] || {};
+                const newSubtask = {
+                    text: item.querySelector('input[type="text"]').value,
+                    completed: item.querySelector('input[type="checkbox"]').checked,
+                    assignedTo: item.querySelector('.subtask-assignee').value || null
+                };
+
+                if (newSubtask.assignedTo && newSubtask.assignedTo !== originalSubtask.assignedTo) {
+                    const assignee = collaborators.find(c => c.uid === newSubtask.assignedTo);
+                    if (assignee) sendAssignmentEmail(newSubtask.text, assignee);
+                }
+                return newSubtask;
+            });
+
+            const taskData = { 
+                text: taskInput.value.trim(), 
+                dueDate: taskDueDate.value || null, 
+                assignedTo: taskAssignee.value || null,
+                subtasks: newSubtasks
+            };
+            
+            const previousAssigneeId = originalTask ? originalTask.assignedTo : null;
+            const newAssigneeId = taskData.assignedTo;
+
+            if (taskId) {
+                await updateDoc(doc(tasksCollectionRef, taskId), taskData);
+            } else { 
+                taskData.status = 'todo'; 
+                taskData.createdAt = new Date(); 
+                await addDoc(tasksCollectionRef, taskData); 
+            }
+            
+            if (newAssigneeId && newAssigneeId !== previousAssigneeId) {
+                const assignee = collaborators.find(c => c.uid === newAssigneeId);
+                if (assignee) sendAssignmentEmail(taskData.text, assignee);
+            }
+
+            closeModal();
+        }
+
+        async function deleteTask(taskId) { await deleteDoc(doc(tasksCollectionRef, taskId)); }
+        async function updateTaskStatus(taskId, newStatus) { await updateDoc(doc(tasksCollectionRef, taskId), { status: newStatus }); if (newStatus === 'done') switch(currentAnimation) { case 'confetti': triggerConfetti(); break; case 'fireworks': triggerFireworks(); break; case 'clapping': triggerClappingHands(); break; } }
+        
+        function populateAssigneeDropdown(selectElement, selectedValue = null) {
+            selectElement.innerHTML = `<option value="">${translations[currentLang].unassigned}</option>`;
+            collaborators.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.uid;
+                option.textContent = c.name ? `${c.name} (${c.email})` : c.uid.substring(0, 8) + '...';
+                selectElement.appendChild(option);
+            });
+            if (selectedValue) {
+                 selectElement.value = selectedValue;
+            }
+        }
+
+        function updateAssigneeDropdown() {
+             populateAssigneeDropdown(taskAssignee, taskAssignee.value);
+        }
+
+        function createSubtaskInput(subtask = { text: '', completed: false, assignedTo: null }, isPrimaryAssignee) {
+            const div = document.createElement('div');
+            div.className = 'grid grid-cols-12 gap-2 items-center subtask-item';
+            div.innerHTML = `
+                <input type="checkbox" class="col-span-1 h-4 w-4 rounded border-gray-300 text-blue-600" ${subtask.completed ? 'checked' : ''}>
+                <input type="text" class="subtask-text col-span-6 border-b dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:border-blue-500" value="${subtask.text}">
+                <select class="subtask-assignee col-span-4 text-xs border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-1 rounded-md"></select>
+                <button class="remove-subtask col-span-1 text-red-500 hover:text-red-700 text-lg">&times;</button>
+            `;
+            const assigneeSelect = div.querySelector('.subtask-assignee');
+            populateAssigneeDropdown(assigneeSelect, subtask.assignedTo);
+            
+            assigneeSelect.disabled = !isPrimaryAssignee;
+            div.querySelector('.remove-subtask').style.display = isPrimaryAssignee ? 'block' : 'none';
+            div.querySelector('.subtask-text').disabled = subtask.assignedTo !== userId && !isPrimaryAssignee;
+
+            subtasksContainer.appendChild(div);
+        }
+
+        function openTaskModal(task = null) {
+            updateAssigneeDropdown();
+            subtasksContainer.innerHTML = '';
+            
+            const isNewTask = task === null;
+            const isPrimaryAssignee = isNewTask || task.assignedTo === userId;
+
+            updateText('modalTitle', isNewTask ? translations[currentLang].modalTitle : translations[currentLang].editModalTitle);
+            
+            taskInput.value = task?.text || '';
+            taskInput.disabled = !isPrimaryAssignee;
+            taskDueDate.value = task?.dueDate || '';
+            taskDueDate.disabled = !isPrimaryAssignee;
+            taskAssignee.value = task?.assignedTo || '';
+            taskAssignee.disabled = !isPrimaryAssignee;
+
+            addSubtaskBtn.style.display = isPrimaryAssignee ? 'block' : 'none';
+            const subtasksToShow = isPrimaryAssignee ? (task?.subtasks || []) : (task?.subtasks || []).filter(sub => sub.assignedTo === userId);
+            subtasksToShow.forEach(sub => createSubtaskInput(sub, isPrimaryAssignee));
+
+            saveTaskBtn.onclick = () => saveTask(task);
+            taskModal.classList.remove('hidden');
+        }
+
+        function closeModal() { taskModal.classList.add('hidden'); }
+        optionsBtn.addEventListener('click', e => { e.stopPropagation(); optionsMenu.classList.toggle('hidden'); });
+        window.addEventListener('click', e => { if (!optionsMenu.classList.contains('hidden') && !optionsMenu.contains(e.target) && !optionsBtn.contains(e.target)) optionsMenu.classList.add('hidden'); });
+        appTitleDisplay.addEventListener('click', () => { appTitleInput.value = appTitleDisplay.textContent; appTitleDisplay.classList.add('hidden'); appTitleInput.classList.remove('hidden'); appTitleInput.focus(); appTitleInput.select(); });
+        async function saveNewTitle() { await saveSetting('title', appTitleInput.value.trim() || 'Kanban Task Tracker'); appTitleInput.classList.add('hidden'); appTitleDisplay.classList.remove('hidden'); }
+        appTitleInput.addEventListener('blur', saveNewTitle);
+        appTitleInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveNewTitle(); if (e.key === 'Escape') { appTitleInput.classList.add('hidden'); appTitleDisplay.classList.remove('hidden'); } });
+        addTaskBtn.addEventListener('click', () => openTaskModal());
+        cancelTaskBtn.addEventListener('click', closeModal);
+        addSubtaskBtn.addEventListener('click', () => createSubtaskInput({ text: '', completed: false, assignedTo: null }, true));
+        let draggedItemId = null;
+        function handleDragStart(e) { const card = e.target.closest('.task-card'); if (!card) return; draggedItemId = card.id; e.dataTransfer.setData('text/plain', draggedItemId); setTimeout(() => card.classList.add('dragging'), 0); }
+        columns.forEach(c => { c.addEventListener('dragover', e => { e.preventDefault(); c.classList.add('drag-over'); }); c.addEventListener('dragleave', () => c.classList.remove('drag-over')); c.addEventListener('drop', e => { e.preventDefault(); c.classList.remove('drag-over'); document.querySelector('.dragging')?.classList.remove('dragging'); if (draggedItemId) updateTaskStatus(draggedItemId, c.parentElement.id); draggedItemId = null; }); });
+        const animCanvas = document.getElementById('animation-canvas'), animCtx = animCanvas.getContext('2d'); let particles = [], animationFrameId;
+        function runAnimation(pL) { if (animationFrameId) cancelAnimationFrame(animationFrameId); function a() { animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height); let s = false; particles.forEach((p, i) => { if (pL.update(p)) { pL.draw(p); s = true; } else particles.splice(i, 1); }); if (s) animationFrameId = requestAnimationFrame(a); else animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height); } a(); }
+        function triggerClappingHands() { if (animationFrameId) cancelAnimationFrame(animationFrameId); animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height); for (let i = 0; i < 15; i++) { const h = document.createElement('div'); h.innerHTML = '👏'; h.className = 'clapping-hand'; h.style.left = `${Math.random() * 90}vw`; h.style.top = `${Math.random() * 90}vh`; h.style.animationDelay = `${Math.random() * 0.5}s`; document.body.appendChild(h); setTimeout(() => h.remove(), 2000); } }
+        function triggerConfetti() { animCanvas.width = window.innerWidth; animCanvas.height = window.innerHeight; particles = []; const c = ['#f44336','#e91e63','#9c27b0','#673ab7','#3f51b5','#2196f3','#03a9f4','#00bcd4','#009688','#4caf50','#8bc34a','#cddc39','#ffeb3b','#ffc107','#ff9800']; for (let i=0; i<300; i++) particles.push({ x: Math.random()*animCanvas.width, y:-20, w:10+Math.random()*10, h:5+Math.random()*5, color: c[Math.floor(Math.random()*c.length)], r:Math.random()*360, s:3+Math.random()*4, g:0.5 }); runAnimation({ update: p => { p.y += p.s; p.s += p.g; p.r += p.s/2; return p.y < animCanvas.height; }, draw: p => { animCtx.save(); animCtx.translate(p.x+p.w/2,p.y+p.h/2); animCtx.rotate(p.r*Math.PI/180); animCtx.fillStyle = p.color; animCtx.fillRect(-p.w/2,-p.h/2,p.w,p.h); animCtx.restore(); } }); }
+        function triggerFireworks() { animCanvas.width = window.innerWidth; animCanvas.height = window.innerHeight; particles = []; const c = ['#ff4747', '#ffca47', '#47ff47', '#47ffff', '#4747ff', '#ff47ff']; for (let i=0; i < 5; i++) particles.push({ isRocket: true, x: animCanvas.width * (0.4 + Math.random() * 0.2), y: animCanvas.height, vx: (Math.random() - 0.5) * 4, vy: -7 - Math.random() * 4, color: c[i % c.length] }); runAnimation({ update: p => { p.x += p.vx; p.y += p.vy; if (p.isRocket) { p.vy += 0.1; if (p.vy >= 0) { for (let i=0; i<50; i++) { const a = Math.random() * Math.PI * 2, s = Math.random() * 4; particles.push({ x: p.x, y: p.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, color: p.color, life: 1, isRocket: false }); } return false; } return true; } else { p.vy += 0.05; p.life -= 0.02; return p.life > 0; } }, draw: p => { animCtx.fillStyle = p.color; animCtx.globalAlpha = p.life || 1; animCtx.fillRect(p.x, p.y, 3, 3); animCtx.globalAlpha = 1; } }); }
+        
+        async function saveProfileData() {
+            const name = userNameInput.value.trim();
+            const email = userEmailInput.value.trim();
+            if (name && email && userId) {
+                const profileData = { uid: userId, name, email, lastSeen: new Date() };
+                const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
+                await setDoc(userDocRef, profileData, { merge: true });
+                return true;
+            }
+            return false;
+        }
+
+        saveProfileBtn.addEventListener('click', async () => {
+            const saved = await saveProfileData();
+            if (saved) {
+                profileModal.classList.add('hidden');
+            } else {
+                alert('Please provide both name and email.');
+            }
+        });
+        
+        userNameInput.addEventListener('blur', saveProfileData);
+        userEmailInput.addEventListener('blur', saveProfileData);
+
+    </script>
+</body>
+</html>
