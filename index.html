@@ -254,9 +254,9 @@
             zh: { appTitle: '看板任务追踪器', appSubtitle: '一次一项任务，组织您的工作流程。', addTaskBtn: '添加新任务', todoHeader: '待办', inProgressHeader: '进行中', doneHeader: '已完成', modalTitle: '添加一个新任务', editModalTitle: '编辑任务', taskInputPlaceholder: '输入任务描述...', dueDateLabel: '截止日期', cancelBtn: '取消', saveBtn: '保存任务', dueOverdue: '已逾期', dueToday: '今天到期', dueTomorrow: '明天到期', duePrefix: '到期:', animationLabel: '动画', animationConfetti: '五彩纸屑', animationFireworks: '烟花', animationClapping: '鼓掌', animationNone: '无', languageLabel: '语言', assigneeLabel: '分配主任务给', subtasksLabel: '子任务', addSubtaskBtn: '+ 添加子任务', unassigned: '未分配', profileModalTitle: '欢迎！请设置您的个人资料。', nameLabel: '名称', emailLabel: '电子邮件', saveProfileBtn: '保存个人资料', yourIdLabel: '您的用户ID（与协作者共享）：', emailSent: '邮件通知已发送至', subtaskProgressFormat: '完成 {completed} / {total} 个子任务' }
         };
 
-        onAuthStateChanged(auth, async user => {
-            if (user) { 
-                userId = user.uid; 
+        async function handleUserSession(user) {
+            if (user) {
+                userId = user.uid;
                 userIdDisplay.textContent = userId;
                 initializeAppData();
                 const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
@@ -264,19 +264,32 @@
                 if (!userDoc.exists() || !userDoc.data().name || !userDoc.data().email) {
                     profileModal.classList.remove('hidden');
                 } else {
-                     await setDoc(userDocRef, { lastSeen: new Date() }, { merge: true });
+                    await setDoc(userDocRef, { lastSeen: new Date() }, { merge: true });
                 }
-            } 
-            else {
-                try {
+            } else {
+                userId = null;
+                // Optionally clear UI or show a "logged out" state
+            }
+        }
+
+        async function main() {
+            onAuthStateChanged(auth, handleUserSession);
+        
+            if (!auth.currentUser) {
+                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
                         await signInAnonymously(auth);
                     }
-                } catch (error) { console.error("Authentication Error:", error); }
+                } catch (error) {
+                     console.error("CRITICAL AUTHENTICATION FAILED:", error);
+                     document.body.innerHTML = `<div class="text-red-500 text-center p-8">Could not connect to the service. Please check your Firebase configuration and security rules.</div>`;
+                }
             }
-        });
+        }
+        
+        main();
 
         function initializeAppData() {
             if (!userId) return;
